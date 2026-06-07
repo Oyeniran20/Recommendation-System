@@ -683,15 +683,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Load data ─────────────────────────────────────────────────────────────────
+# =============================================================================
+# DEFAULT DATASET + OPTIONAL USER UPLOAD
+# =============================================================================
+
+# Your default dataset URL
+DEFAULT_DATASET_URL = "https://raw.githubusercontent.com/Oyeniran20/Recommendation-System/main/Combined_dataset.csv"
+
+# Check if user has uploaded a file (from sidebar file_uploader)
 if uploaded is None:
-    st.markdown("""
-    <div class="warn-box">
-    ⬅️  <b>Upload your Myntra products CSV</b> using the sidebar to get started.
-    The file should be the standard Myntra dataset with columns like
-    <code>product_id</code>, <code>title</code>, <code>category</code>,
-    <code>product_specifications</code>, <code>amount_of_stars</code>, etc.
-    </div>
-    """, unsafe_allow_html=True)
+    # No user upload → use default dataset
+    st.info("📦 **Using default product catalog** — Upload your own CSV in the sidebar if you want to use a different dataset.")
+    
+    try:
+        import requests
+        with st.spinner("🔄 Loading default dataset from GitHub..."):
+            response = requests.get(DEFAULT_DATASET_URL)
+            if response.status_code == 200:
+                # Save to temporary file
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
+                    tmp_file.write(response.content)
+                    uploaded = tmp_file.name
+                st.success("✅ Default dataset loaded successfully!")
+            else:
+                st.error(f"Failed to load default dataset (HTTP {response.status_code})")
+                st.stop()
+    except Exception as e:
+        st.error(f"Error loading default dataset: {e}")
+        st.stop()
+
+# If we reach here, 'uploaded' contains either:
+# - A user-uploaded file (from sidebar), OR
+# - The default dataset we just downloaded
+# Either way, it will work with your load_and_build function
 
     # Show architecture explainer when no data loaded
     st.markdown('<p class="section-header">⚡ How It Works</p>', unsafe_allow_html=True)
