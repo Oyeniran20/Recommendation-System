@@ -4,7 +4,7 @@ A **hybrid content-based recommendation system** for e-commerce fashion products
 Combines TF-IDF text similarity, structured feature matching, and Bayesian popularity scoring.
 
 ## 🚀 Live Demo
-[Click here to try the app]([https://your-streamlit-app-url.streamlit.app](https://recommendation-system-mhawq5iumnqbl55ifzugvg.streamlit.app/))
+[Click here to try the app](https://recommendation-system-mhawq5iumnqbl55ifzugvg.streamlit.app/)
 
 ## 📊 Features
 - **Smart Recommendations** – Find similar products based on text + specs + popularity
