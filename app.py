@@ -30,6 +30,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Initialize session state
+if 'app_initialized' not in st.session_state:
+    st.session_state.app_initialized = False
+if 'df' not in st.session_state:
+    st.session_state.df = None
+if 'text_sim' not in st.session_state:
+    st.session_state.text_sim = None
+if 'struct_sim' not in st.session_state:
+    st.session_state.struct_sim = None
+if 'tfidf_mat' not in st.session_state:
+    st.session_state.tfidf_mat = None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CUSTOM CSS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -616,11 +628,19 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-section">📂 Dataset</div>', unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload CSV", type=["csv"],
-                                help="Upload your Myntra products CSV file")
+    
+    # ONLY THIS PART CHANGED - file uploader is now OPTIONAL
+    user_uploaded_file = st.file_uploader("Upload Your Own CSV (Optional)", type=["csv"],
+                                          help="Leave empty to use the default product catalog")
+    
+    if user_uploaded_file is None:
+        st.caption("📦 Will use default dataset from GitHub")
+    else:
+        st.success("✅ Using your uploaded dataset")
 
+    # EVERYTHING BELOW STAYS THE SAME
     st.markdown('<div class="sidebar-section">⚙️ Model Settings</div>', unsafe_allow_html=True)
-
+    
     alpha = st.slider("Text vs Structured Weight (α)",
                       min_value=0.1, max_value=1.0, value=0.7, step=0.05,
                       help="Higher = more weight on TF-IDF text similarity")
@@ -649,10 +669,10 @@ with st.sidebar:
 
 
 # =============================================================================
-# MAIN CONTENT
+# MAIN CONTENT AREA
 # =============================================================================
 
-# ── Hero ──────────────────────────────────────────────────────────────────────
+# Hero section (always visible)
 st.markdown("""
 <div class="hero">
     <div class="hero-badge">🛍️ AI-Powered Recommendation Engine</div>
@@ -682,45 +702,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Load data ─────────────────────────────────────────────────────────────────
-# =============================================================================
-# DEFAULT DATASET + OPTIONAL USER UPLOAD
-# =============================================================================
-
-# Your default dataset URL
-DEFAULT_DATASET_URL = "https://raw.githubusercontent.com/Oyeniran20/Recommendation-System/main/Combined_dataset.csv"
-
-# Check if user has uploaded a file (from sidebar file_uploader)
-if uploaded is None:
-    # No user upload → use default dataset
-    st.info("📦 **Using default product catalog** — Upload your own CSV in the sidebar if you want to use a different dataset.")
-    
-    try:
-        import requests
-        with st.spinner("🔄 Loading default dataset from GitHub..."):
-            response = requests.get(DEFAULT_DATASET_URL)
-            if response.status_code == 200:
-                # Save to temporary file
-                import tempfile
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp_file:
-                    tmp_file.write(response.content)
-                    uploaded = tmp_file.name
-                st.success("✅ Default dataset loaded successfully!")
-            else:
-                st.error(f"Failed to load default dataset (HTTP {response.status_code})")
-                st.stop()
-    except Exception as e:
-        st.error(f"Error loading default dataset: {e}")
-        st.stop()
-
-# If we reach here, 'uploaded' contains either:
-# - A user-uploaded file (from sidebar), OR
-# - The default dataset we just downloaded
-# Either way, it will work with your load_and_build function
-
-    # Show architecture explainer when no data loaded
+# Check if app is initialized
+if not st.session_state.app_initialized:
+    # Show architecture explainer and start button
     st.markdown('<p class="section-header">⚡ How It Works</p>', unsafe_allow_html=True)
-
+    
     c1, c2, c3 = st.columns(3)
     for col, icon, title, body in [
         (c1, "🔤", "Layer 1 — TF-IDF Text",
@@ -745,26 +731,87 @@ if uploaded is None:
                 <div style="font-size:0.82rem; color:#999; line-height:1.6;">{body}</div>
             </div>
             """, unsafe_allow_html=True)
+    
+    # Start button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        start_button = st.button("🚀 Start Recommending", use_container_width=True, type="primary")
+    
+    if start_button:
+        with st.spinner("📥 Loading product catalog and building recommendation engine..."):
+            # Determine which dataset to use
+            if user_uploaded_file is not None:
+                # Use user's uploaded file
+                dataset_source = user_uploaded_file
+                st.success("✅ Using your uploaded dataset")
+            else:
+                # Download default dataset from GitHub
+                DEFAULT_URL = "https://raw.githubusercontent.com/Oyeniran20/Recommendation-System/main/Combined_dataset.csv"
+                try:
+                    import requests
+                    import tempfile
+                    response = requests.get(DEFAULT_URL)
+                    if response.status_code == 200:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp:
+                            tmp.write(response.content)
+                            dataset_source = tmp.name
+                        st.success("✅ Default dataset loaded from GitHub")
+                    else:
+                        st.error(f"Failed to load dataset (HTTP {response.status_code})")
+                        st.stop()
+                except Exception as e:
+                    st.error(f"Error loading dataset: {e}")
+                    st.stop()
+            
+            # Build the model
+            df, text_sim, struct_sim, tfidf_mat, C, m = load_and_build(dataset_source)
+            
+            # Store in session state
+            st.session_state.df = df
+            st.session_state.text_sim = text_sim
+            st.session_state.struct_sim = struct_sim
+            st.session_state.tfidf_mat = tfidf_mat
+            st.session_state.app_initialized = True
+            st.session_state.C = C
+            st.session_state.m = m
+            
+            st.rerun()
+    
+    # Stop here - don't show tabs until initialized
     st.stop()
 
-# ── Build model ───────────────────────────────────────────────────────────────
-with st.spinner("🔧 Building recommendation engine... (first load only)"):
-    try:
-        df, text_sim, struct_sim, tfidf_mat, C, m = load_and_build(uploaded)
-    except Exception as e:
-        st.error(f"❌ Error loading data: {e}")
-        st.stop()
-
-# Dataset stats for hero update
-n_products  = len(df)
-n_cats      = df["category"].nunique()
-n_reviewed  = (df["total_reviews"] > 0).sum()
-cold_pct    = round((df["total_reviews"] == 0).mean() * 100, 1)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TABS
-# ─────────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["🔍  Recommend", "📊  Analytics", "📐  Evaluate"])
+else:
+    # App is initialized - show the tabs with full functionality
+    df = st.session_state.df
+    text_sim = st.session_state.text_sim
+    struct_sim = st.session_state.struct_sim
+    tfidf_mat = st.session_state.tfidf_mat
+    C = st.session_state.C
+    m = st.session_state.m
+    
+    # Also check if user uploaded a NEW file (different from what was loaded)
+    if user_uploaded_file is not None and st.session_state.get('current_dataset') != 'user_uploaded':
+        # User uploaded a new file - rebuild
+        with st.spinner("🔄 Loading new dataset..."):
+            df, text_sim, struct_sim, tfidf_mat, C, m = load_and_build(user_uploaded_file)
+            st.session_state.df = df
+            st.session_state.text_sim = text_sim
+            st.session_state.struct_sim = struct_sim
+            st.session_state.tfidf_mat = tfidf_mat
+            st.session_state.C = C
+            st.session_state.m = m
+            st.session_state.current_dataset = 'user_uploaded'
+            st.rerun()
+    
+    # Dataset stats for hero update
+    n_products = len(df)
+    n_cats = df["category"].nunique()
+    n_reviewed = (df["total_reviews"] > 0).sum()
+    cold_pct = round((df["total_reviews"] == 0).mean() * 100, 1)
+    
+    # Now show the tabs (your existing tab code)
+    tab1, tab2, tab3 = st.tabs(["🔍  Recommend", "📊  Analytics", "📐  Evaluate"])
+    
 
 
 # ══════════════════════════════════════════════════════════════════════════════
